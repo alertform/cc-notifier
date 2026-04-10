@@ -5,13 +5,14 @@
 DIR="$(cd "$(dirname "$0")" && pwd)"
 INPUT=$(cat 2>/dev/null || echo "{}")
 
-# --- Extract progress summary from transcript ---
-SUMMARY=$(python3 - "$INPUT" <<'PYEOF'
+# Write the Python extractor to a temp file to avoid bash parsing backticks
+# inside heredocs that are nested in $() command substitution.
+PYFILE=$(mktemp /tmp/cc-notifier-XXXXXX.py)
+cat > "$PYFILE" << 'PYEOF'
 import sys, json, re
 
-raw = sys.argv[1]
+raw = sys.argv[1] if len(sys.argv) > 1 else "{}"
 
-# Get transcript path from hook payload
 try:
     payload = json.loads(raw)
     transcript_path = payload.get("transcript_path", "")
@@ -27,7 +28,6 @@ def extract_summary(path):
     except Exception:
         return ""
 
-    # Walk backwards to find the last non-empty assistant text
     for line in reversed(lines):
         try:
             msg = json.loads(line)
@@ -47,26 +47,28 @@ def extract_summary(path):
         text = text.strip()
         if not text:
             continue
-        # Clean up markdown and collapse whitespace
-        text = re.sub(r"[#*`_~>]", "", text)
+        # Strip markdown symbols and collapse whitespace
+        text = re.sub(r"[#*_~>]", "", text)
+        text = re.sub(r"`+", "", text)
         text = re.sub(r"\s+", " ", text).strip()
-        # Truncate to fit a notification banner (~120 chars)
-        return text[:120] + ("…" if len(text) > 120 else "")
+        return text[:120] + ("\u2026" if len(text) > 120 else "")
     return ""
 
 print(extract_summary(transcript_path))
 PYEOF
-)
+
+SUMMARY=$(python3 "$PYFILE" "$INPUT" 2>/dev/null)
+rm -f "$PYFILE"
 
 # Determine sound: error vs normal finish
-if echo "$INPUT" | grep -qi '"is_error"\s*:\s*true'; then
+if echo "$INPUT" | grep -qi '"is_error"[[:space:]]*:[[:space:]]*true'; then
     SOUND="Basso"
     TITLE="Claude Code — Error"
     MESSAGE="${SUMMARY:-Session ended with errors}"
 else
     SOUND="Glass"
     TITLE="Claude Code"
-    MESSAGE="${SUMMARY:-Task finished ✓}"
+    MESSAGE="${SUMMARY:-Task finished}"
 fi
 
 "$DIR/notify.sh" "$TITLE" "$MESSAGE" "$SOUND"
