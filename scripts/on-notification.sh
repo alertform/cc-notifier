@@ -4,6 +4,9 @@
 DIR="$(cd "$(dirname "$0")" && pwd)"
 INPUT=$(cat 2>/dev/null || echo "{}")
 
+# Skip when running inside cmux — it handles Notification forwarding itself.
+[ -n "$CMUX_SURFACE_ID" ] && exit 0
+
 MESSAGE=$(python3 -c "
 import sys, json
 try:

@@ -5,6 +5,9 @@
 DIR="$(cd "$(dirname "$0")" && pwd)"
 INPUT=$(cat 2>/dev/null || echo "{}")
 
+# Skip when running inside cmux — it handles Stop notifications itself.
+[ -n "$CMUX_SURFACE_ID" ] && exit 0
+
 # Write the Python extractor to a temp file to avoid bash parsing backticks
 # inside heredocs that are nested in $() command substitution.
 PYFILE=$(mktemp /tmp/cc-notifier-XXXXXX.py)
